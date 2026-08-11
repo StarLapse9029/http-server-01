@@ -11,7 +11,7 @@ me at the time, so I decided to switch to C.
 This project gave me a basic pratical understanding of raw HTTP requests,
  TCP lifecycle, POSIX sockets and communication through file descriptors.  
 It also gave me some experience with process based concurrency with fork() and
-child process management.
+child process management.   
 Finally, the project introduced several important Unix concepts, including
 signal handling, graceful shutdown, errno-based error handling,
 network byte order, interrupted system calls (EINTR), and partial writes.
