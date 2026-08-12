@@ -23,6 +23,7 @@ void erro(const char *e, int err_no);
 void child(int client_fd);
 void handleRequest(char* req, int client_fd);
 void handleGet(char* path, int client_fd);
+void handlePut(char* path, int client_fd);
 
 void handleSigint(int sig){
     (void)sig; // This parameter is unused
