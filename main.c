@@ -16,6 +16,8 @@
 #define ADDRESS INADDR_ANY
 #define BUFFER_SIZE 1024
 
+
+
 // Used by SIGINT handler: set to zero to stop main loop
 static volatile sig_atomic_t running = 1;
 
@@ -23,7 +25,61 @@ void erro(const char *e, int err_no);
 void child(int client_fd);
 void handleRequest(char* req, int client_fd);
 void handleGet(char* path, int client_fd);
+void handleHead(char* path, int client_fd);
+void handlePost(char* path, int client_fd);
 void handlePut(char* path, int client_fd);
+void handleDelete(char* path, int client_fd);
+void handleConnect(char* path, int client_fd);
+void handleOptions(char* path, int client_fd);
+void handleTrace(char* path, int client_fd);
+void handlePatch(char* path, int client_fd);
+
+typedef enum{
+  GET,
+  HEAD,
+  POST,
+  PUT,
+  DELETE,
+  CONNECT,
+  OPTIONS,
+  TRACE,
+  PATCH,
+  COUNT
+} HttpMethod;
+
+typedef void (*HttpHandler)(char *, int);
+static const HttpHandler handlers[COUNT] = {
+  [GET] = handleGet,
+  [HEAD] = handleHead,
+  [POST] = handlePost,
+  [PUT] = handlePut,
+  [DELETE] = handleDelete,
+  [CONNECT] = handleConnect,
+  [OPTIONS] = handleOptions,
+  [TRACE] = handleTrace,
+  [PATCH] = handlePatch
+};
+
+HttpMethod parseMethod(const char *method){
+    static const char *names[COUNT] = {
+        [GET]     = "GET",
+        [HEAD]    = "HEAD",
+        [POST]    = "POST",
+        [PUT]     = "PUT",
+        [DELETE]  = "DELETE",
+        [CONNECT] = "CONNECT",
+        [OPTIONS] = "OPTIONS",
+        [TRACE]   = "TRACE",
+        [PATCH]   = "PATCH"
+    };
+
+    for (int i = 0; i < COUNT; i++) {
+        if (strcmp(method, names[i]) == 0) {
+            return i;
+        }
+    }
+    return COUNT; // invalid method
+}
 
 void handleSigint(int sig){
     (void)sig; // This parameter is unused
@@ -172,6 +228,7 @@ void child(int client_fd){
 }
 
 void handleRequest(char* req, int client_fd){
+    
     // Try to parse request
     char *method = strtok(req, " ");
     char *path   = strtok(NULL, " ");
@@ -182,13 +239,24 @@ void handleRequest(char* req, int client_fd){
         return;
     }
 
-    // printf("Method:  %s\n", method);
-    // printf("Path:    %s\n", path);
-    // printf("Version: %s\n", version);
+    printf("Method:  %s\n", method);
+    printf("Path:    %s\n", path);
+    printf("Version: %s\n", version);
+  
+    HttpMethod parsed = parseMethod(method);
+    if(parsed >= COUNT){
+      const char *response =
+          "HTTP/1.1 405 Method Not Allowed\r\n"
+          "Content-Type: text/html\r\n"
+          "Allow: GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH\r\n"
+          "Connection: close\r\n"
+          "\r\n"
+          "<h1>405 Method Not Allowed</h1>\r\n";
 
-    if(strcmp(method, "GET") == 0){
-      handleGet(path, client_fd);
+      write(client_fd, response, strlen(response));
+      return;
     }
+    handlers[parsed](path, client_fd);
 }
 
 void handleGet(char* path, int client_fd){
@@ -244,3 +312,46 @@ void handleGet(char* path, int client_fd){
   }
   close(file_fd);            
 }
+
+void handleHead(char* path, int client_fd){
+  (void)path;
+  (void)client_fd;
+  puts("HEAD");
+}
+void handlePost(char* path, int client_fd){
+  (void)path;
+  (void)client_fd;
+  puts("POST");
+}
+void handlePut(char* path, int client_fd){
+  (void)path;
+  (void)client_fd;
+    puts("PUT");
+}
+void handleDelete(char* path, int client_fd){
+  (void)path;
+  (void)client_fd;
+    puts("DELETE");
+}
+void handleConnect(char* path, int client_fd){
+  (void)path;
+  (void)client_fd;
+    puts("CONNECT");
+}
+void handleOptions(char* path, int client_fd){
+  (void)path;
+  (void)client_fd;
+    puts("OPTIONS");
+}
+void handleTrace(char* path, int client_fd){
+  (void)path;
+  (void)client_fd;
+    puts("TRACE");
+}
+void handlePatch(char* path, int client_fd){
+  (void)path;
+  (void)client_fd;
+    puts("PATCH");
+}
+
+
