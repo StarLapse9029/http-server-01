@@ -13,8 +13,10 @@
 #include <sys/sendfile.h>
 
 #define PORT 8080
+#define ADDRESS INADDR_ANY
 #define BUFFER_SIZE 1024
 
+// Used by SIGINT handler: set to zero to stop main loop
 static volatile sig_atomic_t running = 1;
 
 void erro(const char *e, int err_no);
@@ -22,33 +24,37 @@ void child(int client_fd);
 void handleRequest(char* req, int client_fd);
 void handleGet(char* path, int client_fd);
 
-void handleSigint(int sig)
-{
-    (void)sig;
-    running = 0;
+void handleSigint(int sig){
+    (void)sig; // This parameter is unused
+    running = 0; // Stop main loop
 }
 
 int main(void){
-    // Signal handler
+    // Signal handler for SIGINT
     struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = handleSigint;
-    sigemptyset(&sa.sa_mask);
+    memset(&sa, 0, sizeof(sa)); 
+    sa.sa_handler = handleSigint; // Sets handleSigint as the handlers
+    sigemptyset(&sa.sa_mask); // Prevent from blocking signals 
+                              // while handler is running
 
+    // Register the configuration for SIGINT
     if (sigaction(SIGINT, &sa, NULL) == -1) {
         erro("sigaction", errno);
         return EXIT_FAILURE;
     }
 
+    // Signal handler for SIGCHLD
     struct sigaction sa_chld;
     memset(&sa_chld, 0, sizeof(sa_chld));
-    sa_chld.sa_handler = SIG_IGN;
-    sa_chld.sa_flags = SA_NOCLDWAIT;
-
+    sa_chld.sa_handler = SIG_IGN; // Ignores the signal
+    sa_chld.sa_flags = SA_NOCLDWAIT; // Handle child termination
+                                     
+    // Register the configuration for SIGCHLD
     if (sigaction(SIGCHLD, &sa_chld, NULL) == -1) {
         erro("sigaction SIGCHLD", errno);
         return EXIT_FAILURE;
     }
+    puts("Starting Server");
 
     // Socket
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -56,8 +62,9 @@ int main(void){
         erro("Socket", errno);
         return EXIT_FAILURE;
     }
-    puts("Socket: OK.");
-
+    //puts("Socket: OK.");
+    
+    // Sets SO_REUSEADDR: can reuse a local address on certain conditions
     int opt = 1;
     if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
         erro("setsockopt", errno);
@@ -66,12 +73,10 @@ int main(void){
     }
 
     struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(PORT),
-        .sin_addr.s_addr = htonl(INADDR_ANY)
+        .sin_family = AF_INET, // Set for IPV4
+        .sin_port = htons(PORT), // Set port
+        .sin_addr.s_addr = htonl(ADDRESS) // Set address 
     };
-
-    printf("Address - PORT %i: OK.\n", PORT);
 
     // Bind
     if (bind(sock_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
@@ -79,7 +84,7 @@ int main(void){
         close(sock_fd);
         return EXIT_FAILURE;
     }
-    puts("Bind: OK.");
+    //puts("Bind: OK.");
 
     // Listen
     if (listen(sock_fd, 10) == -1) {
@@ -87,40 +92,45 @@ int main(void){
         close(sock_fd);
         return EXIT_FAILURE;
     }
-    puts("Listen: OK.");
+    //puts("Listen: OK.");
+    printf("Listening on: %i\n", PORT);
 
     while (running) {
-        int client_fd = accept(sock_fd, NULL, NULL);
+      
+      int client_fd = accept(sock_fd, NULL, NULL);
 
-        if (client_fd == -1) {
-            if (errno == EINTR && !running) {
-                break;
-            }
+      if (client_fd == -1) {
+          if (errno == EINTR && !running) {
+              break;
+          }
 
-            if (errno == EINTR) {
-                continue;
-            }
+          if (errno == EINTR) {
+              continue;
+          }
 
-            erro("Accept", errno);
-            break;
-        }
+          erro("Accept", errno);
+          break;
+      }
 
-        printf("Accept - %d: OK.\n", client_fd);
+      printf("Accepted - %d: OK.\n", client_fd);
+      
+      // Fork
+      pid_t pid = fork();
 
-        pid_t pid = fork();
-
-        if (pid == -1) {
-            erro("Fork", errno);
-            close(client_fd);
-            continue;
-        }
-
-        if (pid == 0) {
-            close(sock_fd);
-            child(client_fd);
-            _exit(EXIT_SUCCESS);
-        }
-        close(client_fd);
+      if (pid == -1) {
+          erro("Fork", errno);
+          close(client_fd);
+          continue;
+      }
+      
+      // If child proccess
+      if (pid == 0) {
+          close(sock_fd);
+          child(client_fd);
+          _exit(EXIT_SUCCESS);
+      }
+      // Continue parent proccess
+      close(client_fd);
     }
 
     // Cleanup
@@ -135,8 +145,11 @@ void erro(const char *e, int err_no){
             e, err_no, strerror(err_no));
 }
 
+// On child process
 void child(int client_fd){
+
     char buffer[BUFFER_SIZE];
+    // Receve messages from client_fd into buffer
     ssize_t req_size = recv(
         client_fd,
         buffer,
@@ -144,6 +157,7 @@ void child(int client_fd){
         0
     );
     if (req_size > 0) {
+        // If received 1 or more bytes
         buffer[req_size] = '\0';
         handleRequest(buffer, client_fd);
     }
@@ -157,6 +171,7 @@ void child(int client_fd){
 }
 
 void handleRequest(char* req, int client_fd){
+    // Try to parse request
     char *method = strtok(req, " ");
     char *path   = strtok(NULL, " ");
     char *version = strtok(NULL, " ");
@@ -166,9 +181,9 @@ void handleRequest(char* req, int client_fd){
         return;
     }
 
-    printf("Method:  %s\n", method);
-    printf("Path:    %s\n", path);
-    printf("Version: %s\n", version);
+    // printf("Method:  %s\n", method);
+    // printf("Path:    %s\n", path);
+    // printf("Version: %s\n", version);
 
     if(strcmp(method, "GET") == 0){
       handleGet(path, client_fd);
@@ -179,6 +194,8 @@ void handleGet(char* path, int client_fd){
   char *header = "HTTP/1.1 200 OK\r\n"
                  "Content-Type: text/html\r\n"
                  "Connection: close\r\n\r\n";
+  
+  // Set path of requested file
   char file[BUFFER_SIZE];
   if(strcmp(path, "/") == 0){
     path = "index.html";
@@ -188,7 +205,9 @@ void handleGet(char* path, int client_fd){
   }
   snprintf(file, sizeof(file), "./%s", path);
 
+  // Try to open requested file
   int file_fd = open(file, O_RDONLY);
+  // Handle file not found
   if (file_fd == -1) {
       const char *response =
           "HTTP/1.1 404 Not Found\r\n"
@@ -200,15 +219,19 @@ void handleGet(char* path, int client_fd){
       write(client_fd, response, strlen(response));
       return;
   }
+
   // Write header
   write(client_fd, header, strlen(header));
   //char* data = "<html><body><h1>Hello, world!</h1></body></html>\r\n";
   
   char buffer[BUFFER_SIZE];
   ssize_t i;
-  //Write data
+ 
+  // Reads file in chunks
   while((i = read(file_fd, buffer, sizeof(buffer))) > 0){
     ssize_t j = 0;
+    // Since write can write less bytes than requested
+    // Need to keep track how many bytes were written
     while (j < i){
       ssize_t written = write(client_fd, buffer + j, i - j);
       if(written == -1){
